@@ -21,7 +21,7 @@ SoleShapper is a Blender plug-in designed specifically for shoe designers who ne
 2. Open Blender and go to **Edit > Preferences**
 3. Click the **Add-ons** tab
 4. Click the drop-down arrow next to the **Install** button and choose **Install from Disk...**
-5. Navigate to this folder and select `__init__.py`
+5. Navigate to this folder and select `soleshapper.py`
 6. Tick the checkbox to enable the add-on
 
 ## Usage
@@ -60,6 +60,15 @@ preset save/load/delete, OBJ export/import, and STL export.
 
 GitHub CI runs the same smoke test on pull requests and pushes to `main` via
 `.github/workflows/runtime-smoke.yml`.
+
+## Troubleshooting
+
+If the add-on tab is missing in the 3D Viewport sidebar:
+
+1. Confirm the add-on is enabled in **Edit > Preferences > Add-ons**.
+2. In the 3D Viewport, press **N** to open the sidebar and look for the
+   **SoleShapper2** tab.
+3. If it still does not appear, disable/re-enable the add-on and restart Blender.
 
 ## License
 
