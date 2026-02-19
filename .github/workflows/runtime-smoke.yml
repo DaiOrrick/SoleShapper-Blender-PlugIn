@@ -1,0 +1,33 @@
+name: Runtime Smoke Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  runtime-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache Blender
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/soleshapper
+          key: blender-${{ runner.os }}-4.2.9
+
+      - name: Validate smoke scripts
+        run: |
+          python3 -m py_compile scripts/runtime_smoke.py
+          bash -n scripts/run_runtime_smoke.sh
+
+      - name: Run runtime smoke test
+        env:
+          BLENDER_VERSION: "4.2.9"
+        run: bash scripts/run_runtime_smoke.sh

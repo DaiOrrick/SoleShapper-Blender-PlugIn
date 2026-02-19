@@ -33,6 +33,34 @@ SoleShapper is a Blender plug-in designed specifically for shoe designers who ne
 5. Click **Apply Noise Deformation**
 6. Reset to base and try again any time
 
+## Runtime Smoke Test
+
+Run a headless end-to-end smoke test of the add-on:
+
+```bash
+bash scripts/run_runtime_smoke.sh
+```
+
+Options:
+
+- Use a specific Blender binary:
+
+  ```bash
+  BLENDER_BIN=/path/to/blender bash scripts/run_runtime_smoke.sh
+  ```
+
+- Override portable Blender version (Linux x86_64 auto-download path):
+
+  ```bash
+  BLENDER_VERSION=4.2.9 bash scripts/run_runtime_smoke.sh
+  ```
+
+The test exercises add-on registration, default mesh load, noise/scale operators,
+preset save/load/delete, OBJ export/import, and STL export.
+
+GitHub CI runs the same smoke test on pull requests and pushes to `main` via
+`.github/workflows/runtime-smoke.yml`.
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
