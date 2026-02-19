@@ -24,6 +24,7 @@ import math
 import hashlib
 import random
 import os
+import json
 from bpy.props import (
     FloatProperty, IntProperty, EnumProperty,
     BoolProperty, StringProperty
@@ -123,17 +124,29 @@ def import_custom_obj(filepath, context):
         if obj:
             bpy.data.objects.remove(obj, do_unlink=True)
 
-    # Import
-    if hasattr(bpy.ops.wm, 'obj_import'):
-        bpy.ops.wm.obj_import(filepath=filepath)
-    else:
-        bpy.ops.import_scene.obj(filepath=filepath)
+    bpy.ops.object.select_all(action='DESELECT')
+    existing_names = {obj.name for obj in bpy.data.objects}
 
-    imported = context.selected_objects
+    try:
+        if hasattr(bpy.ops.wm, 'obj_import'):
+            bpy.ops.wm.obj_import(filepath=filepath)
+        else:
+            bpy.ops.import_scene.obj(filepath=filepath)
+    except Exception as exc:
+        return None, f"OBJ import failed: {exc}"
+
+    imported = [obj for obj in context.selected_objects if obj.type == 'MESH']
     if not imported:
-        return None, "No objects imported from OBJ file"
+        imported = [
+            obj for obj in bpy.data.objects
+            if obj.name not in existing_names and obj.type == 'MESH'
+        ]
+    if not imported:
+        return None, "No mesh objects imported from OBJ file"
 
-    obj = imported[0]
+    obj = context.view_layer.objects.active
+    if not obj or obj.type != 'MESH' or obj not in imported:
+        obj = imported[0]
     obj.name = "SoleBase"
 
     bpy.ops.object.select_all(action='DESELECT')
@@ -790,11 +803,10 @@ class SOLEDESIGNER_OT_apply_scale(Operator):
         cy = (min_y + max_y) / 2.0
         min_z = min(v.z for v in verts_world)
         max_z = max(v.z for v in verts_world)
-        sole_height = max(max_z - min_z, 0.001)
         mid_z = (min_z + max_z) / 2.0
 
-        mat     = obj.matrix_world.to_3x3().normalized()
-        mat_inv = obj.matrix_world.inverted()
+        mat = obj.matrix_world.to_3x3().normalized()
+        world_to_local = obj.matrix_world.inverted_safe()
 
         zone     = props.scale_zone
         smoothing = props.scale_zone_smoothing
@@ -838,9 +850,12 @@ class SOLEDESIGNER_OT_apply_scale(Operator):
             eff_sy = 1.0 + (sy - 1.0) * weight
             eff_sz = 1.0 + (sz - 1.0) * weight
 
-            v.co.x = cx + (v.co.x - cx) * eff_sx
-            v.co.y = cy + (v.co.y - cy) * eff_sy
-            v.co.z = mid_z + (v.co.z - mid_z) * eff_sz
+            scaled_world = Vector((
+                cx + (vco.x - cx) * eff_sx,
+                cy + (vco.y - cy) * eff_sy,
+                mid_z + (vco.z - mid_z) * eff_sz,
+            ))
+            v.co = world_to_local @ scaled_world
 
         scale_bm.to_mesh(obj.data)
         scale_bm.free()
@@ -924,6 +939,24 @@ class SOLEDESIGNER_OT_reset_noise(Operator):
 # PRESET OPERATORS
 # ---------------------------------------------------------------------------
 
+PRESET_SCENE_KEY = "soleshapper2_presets"
+
+
+def _read_presets(scene):
+    raw = scene.get(PRESET_SCENE_KEY, "{}")
+    if isinstance(raw, dict):
+        return dict(raw)
+    try:
+        parsed = json.loads(raw)
+    except Exception:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _write_presets(scene, presets):
+    scene[PRESET_SCENE_KEY] = json.dumps(presets)
+
+
 class SOLEDESIGNER_OT_save_preset(Operator):
     bl_idname  = "soledesigner.save_preset"
     bl_label   = "Save Preset"
@@ -931,7 +964,6 @@ class SOLEDESIGNER_OT_save_preset(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        import json
         p    = context.scene.sole_designer_props
         name = p.preset_name.strip()
         if not name:
@@ -939,10 +971,9 @@ class SOLEDESIGNER_OT_save_preset(Operator):
             return {'CANCELLED'}
 
         data = {k: getattr(p, k) for k in ['noise_type', 'noise_frequency', 'noise_amplitude', 'noise_roughness', 'noise_octaves', 'noise_lacunarity', 'warp_strength', 'noise_smoothing', 'noise_seed', 'noise_offset_x', 'noise_offset_y', 'noise_offset_z', 'noise_scale_x', 'noise_scale_y', 'noise_scale_z', 'noise_rotate_x', 'noise_rotate_y', 'noise_rotate_z', 'wave_freq_x', 'wave_freq_y', 'wave_phase', 'noise_zone', 'deform_target', 'noise2_enabled', 'noise2_type', 'noise2_frequency', 'noise2_blend']}
-        key  = "soleshapper2_presets"
-        existing = json.loads(context.scene.get(key, "{}"))
+        existing = _read_presets(context.scene)
         existing[name] = data
-        context.scene[key] = json.dumps(existing)
+        _write_presets(context.scene, existing)
         self.report({'INFO'}, f"Preset '{name}' saved.")
         return {'FINISHED'}
 
@@ -954,11 +985,9 @@ class SOLEDESIGNER_OT_load_preset(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        import json
         p    = context.scene.sole_designer_props
         name = p.preset_name.strip()
-        key  = "soleshapper2_presets"
-        existing = json.loads(context.scene.get(key, "{}"))
+        existing = _read_presets(context.scene)
         if name not in existing:
             self.report({'ERROR'}, f"No preset named '{name}'. Saved: {list(existing.keys())}")
             return {'CANCELLED'}
@@ -979,16 +1008,14 @@ class SOLEDESIGNER_OT_delete_preset(Operator):
     bl_options = {'REGISTER', 'UNDO'}
 
     def execute(self, context):
-        import json
         p    = context.scene.sole_designer_props
         name = p.preset_name.strip()
-        key  = "soleshapper2_presets"
-        existing = json.loads(context.scene.get(key, "{}"))
+        existing = _read_presets(context.scene)
         if name not in existing:
             self.report({'WARNING'}, f"No preset named '{name}'.")
             return {'CANCELLED'}
         del existing[name]
-        context.scene[key] = json.dumps(existing)
+        _write_presets(context.scene, existing)
         self.report({'INFO'}, f"Preset '{name}' deleted.")
         return {'FINISHED'}
 
@@ -1263,8 +1290,7 @@ class SOLEDESIGNER_PT_main(Panel):
         row.operator("soledesigner.save_preset",   text="Save",   icon='FILE_TICK')
         row.operator("soledesigner.load_preset",   text="Load",   icon='FILE_FOLDER')
         row.operator("soledesigner.delete_preset", text="",       icon='TRASH')
-        import json
-        presets = list(json.loads(context.scene.get("soleshapper2_presets", "{}")).keys())
+        presets = list(_read_presets(context.scene).keys())
         if presets:
             pbox.label(text="Saved: " + ", ".join(presets), icon='INFO')
 
@@ -1496,14 +1522,10 @@ def _live_preview_timer_fn():
         deformed.matrix_world = base.matrix_world.copy()
         scene.collection.objects.link(deformed)
         base.hide_set(True)
-        orig_sub = p.subdivision_levels
-        p['subdivision_levels'] = 0
         try:
             apply_noise_to_mesh(deformed, p)
         except Exception:
             pass
-        finally:
-            p['subdivision_levels'] = orig_sub
     except Exception:
         pass
 
@@ -1512,23 +1534,28 @@ def _live_preview_timer_fn():
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
-    bpy.types.Scene.sole_designer_props = bpy.props.PointerProperty(type=SoleDesignerProperties)
+    if not hasattr(bpy.types.Scene, "sole_designer_props"):
+        bpy.types.Scene.sole_designer_props = bpy.props.PointerProperty(type=SoleDesignerProperties)
     if _live_preview_handler not in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.append(_live_preview_handler)
+    _live_preview_state['dirty'] = False
     _live_preview_state['running'] = True
-    bpy.app.timers.register(_live_preview_timer_fn, first_interval=0.4, persistent=True)
+    if not bpy.app.timers.is_registered(_live_preview_timer_fn):
+        bpy.app.timers.register(_live_preview_timer_fn, first_interval=0.4, persistent=True)
     print("[SoleShapper2] Registered successfully.")
 
 
 def unregister():
-    for cls in reversed(classes):
-        bpy.utils.unregister_class(cls)
     _live_preview_state['running'] = False
+    _live_preview_state['dirty'] = False
     if _live_preview_handler in bpy.app.handlers.depsgraph_update_post:
         bpy.app.handlers.depsgraph_update_post.remove(_live_preview_handler)
     if bpy.app.timers.is_registered(_live_preview_timer_fn):
         bpy.app.timers.unregister(_live_preview_timer_fn)
-    del bpy.types.Scene.sole_designer_props
+    if hasattr(bpy.types.Scene, "sole_designer_props"):
+        del bpy.types.Scene.sole_designer_props
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
     print("[SoleShapper2] Unregistered.")
 
 
