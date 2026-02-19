@@ -1,0 +1,30 @@
+schema_version = "1.0.0"
+
+id = "soleshapper"
+version = "2.0.0"
+name = "SoleShapper"
+tagline = "Procedural shoe sole designer with noise deformation and zone masking"
+maintainer = "SoleShapper"
+type = "add-on"
+
+tags = ["Mesh", "3D View", "Object"]
+
+blender_version_min = "4.2.0"
+
+license = [
+  "SPDX:GPL-3.0-or-later",
+]
+
+copyright = [
+  "2026 SoleShapper",
+]
+
+[permissions]
+files = "Import custom OBJ sole meshes and export deformed soles as STL or OBJ"
+
+[build]
+paths_exclude_pattern = [
+  "__pycache__/",
+  ".*",
+  "*.zip",
+]
