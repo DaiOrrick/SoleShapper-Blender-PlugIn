@@ -9,7 +9,7 @@ SoleShapper2 - Blender Addon for Shoe Sole Design
 Compatible with Blender 3.x, 4.x, 5.x
 
 Installation:
-    Edit > Preferences > Add-ons > Install > soledesigner.py > Enable
+    Edit > Preferences > Add-ons > Install from Disk... > soleshapper-<version>.zip > Enable
 Usage:
     3D Viewport N-panel -> Sole Shapper tab
     1. Click "Load Default Sole" OR "Load Custom OBJ"
@@ -42,6 +42,16 @@ from bpy.props import (
 from bpy.types import Panel, Operator, PropertyGroup
 from mathutils import Vector
 from mathutils import noise as bl_noise
+
+
+_LOG_PREFIX = "[SoleShapper2]"
+
+
+def _log_warning(message, exc=None):
+    if exc is None:
+        print(f"{_LOG_PREFIX} WARNING: {message}")
+    else:
+        print(f"{_LOG_PREFIX} WARNING: {message}: {exc}")
 
 
 # ===========================================================================
@@ -83,8 +93,11 @@ def build_default_sole(context):
     for f in DEFAULT_FACES:
         try:
             bm.faces.new([bm.verts[i] for i in f])
-        except Exception:
-            pass
+        except ValueError:
+            # Ignore duplicate faces in baked data.
+            continue
+        except IndexError as exc:
+            _log_warning(f"Skipped invalid face indices: {f}", exc)
 
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     bm.to_mesh(mesh)
@@ -958,7 +971,8 @@ def _read_presets(scene):
         return dict(raw)
     try:
         parsed = json.loads(raw)
-    except Exception:
+    except (json.JSONDecodeError, TypeError) as exc:
+        _log_warning("Failed to parse preset data from scene storage", exc)
         return {}
     return parsed if isinstance(parsed, dict) else {}
 
@@ -1002,11 +1016,17 @@ class SOLEDESIGNER_OT_load_preset(Operator):
             self.report({'ERROR'}, f"No preset named '{name}'. Saved: {list(existing.keys())}")
             return {'CANCELLED'}
         data = existing[name]
+        skipped = []
         for k, v in data.items():
             try:
                 setattr(p, k, v)
-            except Exception:
-                pass
+            except (AttributeError, TypeError, ValueError):
+                skipped.append(k)
+        if skipped:
+            _log_warning(
+                f"Preset '{name}' had unsupported/invalid keys: {', '.join(sorted(skipped))}"
+            )
+            self.report({'WARNING'}, f"Preset '{name}' loaded with {len(skipped)} skipped fields.")
         self.report({'INFO'}, f"Preset '{name}' loaded.")
         return {'FINISHED'}
 
@@ -1212,9 +1232,34 @@ class SOLEDESIGNER_OT_export_stl(Operator):
         obj = bpy.data.objects.get("SoleShapper2") or bpy.data.objects.get("SoleBase")
         if not obj:
             self.report({'ERROR'}, "No sole mesh found."); return {'CANCELLED'}
+        has_modern_stl = hasattr(bpy.ops.wm, "stl_export")
+        has_legacy_stl = hasattr(bpy.ops.export_mesh, "stl")
+        if not has_modern_stl and not has_legacy_stl:
+            self.report({'ERROR'}, "STL export operator unavailable in this Blender build.")
+            return {'CANCELLED'}
         bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True); context.view_layer.objects.active = obj
-        bpy.ops.export_mesh.stl(filepath=self.filepath, use_selection=True)
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+        try:
+            if has_modern_stl:
+                result = bpy.ops.wm.stl_export(
+                    filepath=self.filepath,
+                    export_selected_objects=True,
+                )
+            else:
+                result = bpy.ops.export_mesh.stl(filepath=self.filepath, use_selection=True)
+        except TypeError:
+            # Blender API keyword args differ across versions.
+            if has_modern_stl:
+                result = bpy.ops.wm.stl_export(filepath=self.filepath)
+            else:
+                result = bpy.ops.export_mesh.stl(filepath=self.filepath)
+        except Exception as exc:
+            self.report({'ERROR'}, f"STL export failed: {exc}")
+            return {'CANCELLED'}
+        if 'FINISHED' not in result:
+            self.report({'ERROR'}, f"STL export did not finish: {result}")
+            return {'CANCELLED'}
         self.report({'INFO'}, f"Exported: {self.filepath}"); return {'FINISHED'}
 
 
@@ -1228,12 +1273,34 @@ class SOLEDESIGNER_OT_export_obj(Operator):
         obj = bpy.data.objects.get("SoleShapper2") or bpy.data.objects.get("SoleBase")
         if not obj:
             self.report({'ERROR'}, "No sole mesh found."); return {'CANCELLED'}
+        has_modern_obj = hasattr(bpy.ops.wm, "obj_export")
+        has_legacy_obj = hasattr(bpy.ops.export_scene, "obj")
+        if not has_modern_obj and not has_legacy_obj:
+            self.report({'ERROR'}, "OBJ export operator unavailable in this Blender build.")
+            return {'CANCELLED'}
         bpy.ops.object.select_all(action='DESELECT')
-        obj.select_set(True); context.view_layer.objects.active = obj
-        if hasattr(bpy.ops.wm, 'obj_export'):
-            bpy.ops.wm.obj_export(filepath=self.filepath, export_selected_objects=True)
-        else:
-            bpy.ops.export_scene.obj(filepath=self.filepath, use_selection=True)
+        obj.select_set(True)
+        context.view_layer.objects.active = obj
+        try:
+            if has_modern_obj:
+                result = bpy.ops.wm.obj_export(
+                    filepath=self.filepath,
+                    export_selected_objects=True,
+                )
+            else:
+                result = bpy.ops.export_scene.obj(filepath=self.filepath, use_selection=True)
+        except TypeError:
+            # Blender API keyword args differ across versions.
+            if has_modern_obj:
+                result = bpy.ops.wm.obj_export(filepath=self.filepath)
+            else:
+                result = bpy.ops.export_scene.obj(filepath=self.filepath)
+        except Exception as exc:
+            self.report({'ERROR'}, f"OBJ export failed: {exc}")
+            return {'CANCELLED'}
+        if 'FINISHED' not in result:
+            self.report({'ERROR'}, f"OBJ export did not finish: {result}")
+            return {'CANCELLED'}
         self.report({'INFO'}, f"Exported: {self.filepath}"); return {'FINISHED'}
 
 
@@ -1522,9 +1589,11 @@ def _live_preview_timer_fn():
     if old_obj:
         try:
             bpy.data.objects.remove(old_obj, do_unlink=True)
-        except Exception:
+        except ReferenceError as exc:
+            _log_warning("Failed to remove stale live preview object", exc)
             return 0.4
 
+    deformed = None
     try:
         new_mesh = base.data.copy()
         new_mesh.name = "SoleShapper2_Mesh"
@@ -1534,10 +1603,18 @@ def _live_preview_timer_fn():
         base.hide_set(True)
         try:
             apply_noise_to_mesh(deformed, p)
-        except Exception:
-            pass
-    except Exception:
-        pass
+        except Exception as exc:
+            _log_warning("Live preview noise apply failed", exc)
+            bpy.data.objects.remove(deformed, do_unlink=True)
+            base.hide_set(False)
+    except Exception as exc:
+        _log_warning("Live preview rebuild failed", exc)
+        if deformed is not None:
+            try:
+                bpy.data.objects.remove(deformed, do_unlink=True)
+            except ReferenceError:
+                pass
+        base.hide_set(False)
 
     return 0.4
 

@@ -1,0 +1,44 @@
+name: Build Extension Package
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-extension:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate build script
+        run: bash -n scripts/build_extension_zip.sh
+
+      - name: Validate extension metadata
+        run: python3 scripts/check_version_consistency.py
+
+      - name: Build extension zip
+        run: bash scripts/build_extension_zip.sh
+
+      - name: Upload package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: blender-extension-package
+          path: |
+            dist/*.zip
+            dist/*.sha256
+
+      - name: Publish GitHub Release assets
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.sha256
+          generate_release_notes: true
