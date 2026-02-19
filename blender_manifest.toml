@@ -3,7 +3,7 @@ schema_version = "1.0.0"
 id = "soleshapper"
 version = "2.0.0"
 name = "SoleShapper"
-tagline = "Procedural shoe sole designer with noise deformation and zone masking"
+tagline = "Procedural sole designer with noise and zone masking"
 maintainer = "SoleShapper"
 type = "add-on"
 
@@ -20,7 +20,7 @@ copyright = [
 ]
 
 [permissions]
-files = "Import custom OBJ sole meshes and export deformed soles as STL or OBJ"
+files = "Import custom OBJ soles and export deformed STL/OBJ files"
 
 [build]
 paths_exclude_pattern = [
