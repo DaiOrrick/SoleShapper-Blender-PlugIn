@@ -61,6 +61,32 @@ preset save/load/delete, OBJ export/import, and STL export.
 GitHub CI runs the same smoke test on pull requests and pushes to `main` via
 `.github/workflows/runtime-smoke.yml`.
 
+## Release Packaging
+
+Build a distributable extension zip locally:
+
+```bash
+bash scripts/build_extension_zip.sh
+```
+
+Output:
+
+- `dist/soleshapper-<version>.zip`
+- `dist/soleshapper-<version>.zip.sha256`
+
+Automated tag release build:
+
+1. Bump `version` in `blender_manifest.toml`.
+2. Create and push a tag, for example:
+
+   ```bash
+   git tag v2.0.1
+   git push origin v2.0.1
+   ```
+
+3. GitHub Actions workflow `.github/workflows/release-extension.yml` builds the zip
+   and attaches it to the GitHub Release for that tag.
+
 ## Troubleshooting
 
 If the add-on tab is missing in the 3D Viewport sidebar:
