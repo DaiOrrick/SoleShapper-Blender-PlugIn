@@ -17,12 +17,16 @@ SoleShapper is a Blender plug-in designed specifically for shoe designers who ne
 
 ## Installation
 
-1. Download or clone this repository
-2. Open Blender and go to **Edit > Preferences**
-3. Click the **Add-ons** tab
-4. Click the drop-down arrow next to the **Install** button and choose **Install from Disk...**
-5. Navigate to this folder and select `soleshapper.py`
-6. Tick the checkbox to enable the add-on
+1. Build a release zip:
+
+   ```bash
+   bash scripts/build_extension_zip.sh
+   ```
+
+2. Open Blender and go to **Edit > Preferences**.
+3. Open the **Get Extensions** section and choose **Install from Disk...**.
+4. Select `dist/soleshapper-<version>.zip`.
+5. Enable **SoleShapper** in the Extensions/Add-ons list.
 
 ## Usage
 
@@ -77,14 +81,15 @@ Output:
 Automated tag release build:
 
 1. Bump `version` in `blender_manifest.toml`.
-2. Create and push a tag, for example:
+2. Keep `bl_info["version"]` in `addon_core.py` in sync (or run `python3 scripts/check_version_consistency.py`).
+3. Create and push a tag, for example:
 
    ```bash
    git tag v2.0.1
    git push origin v2.0.1
    ```
 
-3. GitHub Actions workflow `.github/workflows/release-extension.yml` builds the zip
+4. GitHub Actions workflow `.github/workflows/release-extension.yml` builds the zip
    and attaches it to the GitHub Release for that tag.
 
 ## Troubleshooting

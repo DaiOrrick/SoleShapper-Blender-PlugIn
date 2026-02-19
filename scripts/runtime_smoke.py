@@ -7,6 +7,7 @@ Run with:
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import sys
 import tempfile
@@ -39,6 +40,14 @@ def import_addon(path: Path):
     return module
 
 
+def mesh_signature(obj: bpy.types.Object) -> str:
+    digest = hashlib.sha256()
+    digest.update(f"{len(obj.data.vertices)}|{len(obj.data.polygons)}|".encode("utf-8"))
+    for vert in obj.data.vertices:
+        digest.update(f"{vert.co.x:.6f},{vert.co.y:.6f},{vert.co.z:.6f};".encode("utf-8"))
+    return digest.hexdigest()
+
+
 def run_smoke_test() -> None:
     cleanup_scene()
 
@@ -57,10 +66,25 @@ def run_smoke_test() -> None:
         props.noise_type = 'SIMPLEX'
         props.noise_frequency = 3.0
         props.noise_amplitude = 0.01
+        props.noise_seed = 42
         result = bpy.ops.soledesigner.apply_noise()
         assert_true('FINISHED' in result, f"apply_noise failed: {result}")
         deformed = bpy.data.objects.get("SoleShapper2")
         assert_true(deformed is not None and deformed.type == 'MESH', "SoleShapper2 mesh missing")
+        signature_first = mesh_signature(deformed)
+
+        result = bpy.ops.soledesigner.reset_mesh()
+        assert_true('FINISHED' in result, f"reset_mesh failed: {result}")
+
+        result = bpy.ops.soledesigner.apply_noise()
+        assert_true('FINISHED' in result, f"repeat apply_noise failed: {result}")
+        deformed = bpy.data.objects.get("SoleShapper2")
+        assert_true(deformed is not None and deformed.type == 'MESH', "SoleShapper2 mesh missing after reset")
+        signature_second = mesh_signature(deformed)
+        assert_true(
+            signature_first == signature_second,
+            "Determinism regression: repeated deformation produced different mesh signature",
+        )
 
         props.mesh_scale_x = 1.10
         props.mesh_scale_y = 0.95

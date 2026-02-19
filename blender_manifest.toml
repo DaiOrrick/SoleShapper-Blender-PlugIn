@@ -24,7 +24,11 @@ files = "Import custom OBJ soles and export deformed STL/OBJ files"
 
 [build]
 paths_exclude_pattern = [
+  ".github/",
+  "scripts/",
+  "dist/",
   "__pycache__/",
   ".*",
   "*.zip",
+  "*.sha256",
 ]

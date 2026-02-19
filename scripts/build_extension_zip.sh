@@ -4,10 +4,15 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT_DIR="${1:-$REPO_ROOT/dist}"
 MANIFEST_PATH="$REPO_ROOT/blender_manifest.toml"
+CHECK_SCRIPT="$REPO_ROOT/scripts/check_version_consistency.py"
 
 if [[ ! -f "$MANIFEST_PATH" ]]; then
   echo "Manifest not found: $MANIFEST_PATH" >&2
   exit 1
+fi
+
+if [[ -f "$CHECK_SCRIPT" ]]; then
+  python3 "$CHECK_SCRIPT"
 fi
 
 readarray -t manifest_meta < <(python3 - "$MANIFEST_PATH" <<'PY'
@@ -36,31 +41,58 @@ ZIP_PATH="$OUT_DIR/$ZIP_NAME"
 mkdir -p "$OUT_DIR"
 rm -f "$ZIP_PATH" "$ZIP_PATH.sha256"
 
-mapfile -t tracked_files < <(git -C "$REPO_ROOT" ls-files)
-
-include_files=()
-for rel_path in "${tracked_files[@]}"; do
-  case "$rel_path" in
-    .github/*|scripts/*|dist/*|*.zip)
-      continue
-      ;;
-    */__pycache__/*|__pycache__/*|*.pyc)
-      continue
-      ;;
-  esac
-
-  abs_path="$REPO_ROOT/$rel_path"
-  if [[ -f "$abs_path" ]]; then
-    include_files+=("$rel_path")
-  fi
-done
-
-if [[ ${#include_files[@]} -eq 0 ]]; then
-  echo "No files selected for packaging." >&2
+BLENDER_BIN_VALUE="${BLENDER_BIN:-}"
+if [[ -n "$BLENDER_BIN_VALUE" && ! -x "$BLENDER_BIN_VALUE" ]]; then
+  echo "BLENDER_BIN is set but not executable: $BLENDER_BIN_VALUE" >&2
   exit 1
 fi
+if [[ -z "$BLENDER_BIN_VALUE" ]] && command -v blender >/dev/null 2>&1; then
+  BLENDER_BIN_VALUE="$(command -v blender)"
+fi
+if [[ -z "$BLENDER_BIN_VALUE" ]]; then
+  cached_blender="${HOME}/.cache/soleshapper/blender-${BLENDER_VERSION:-4.2.9}-linux-x64/blender"
+  if [[ -x "$cached_blender" ]]; then
+    BLENDER_BIN_VALUE="$cached_blender"
+  fi
+fi
 
-python3 - "$REPO_ROOT" "$ZIP_PATH" "${include_files[@]}" <<'PY'
+if [[ -n "$BLENDER_BIN_VALUE" ]]; then
+  echo "Using Blender CLI for validate/build: $BLENDER_BIN_VALUE"
+  "$BLENDER_BIN_VALUE" --command extension validate "$REPO_ROOT"
+  "$BLENDER_BIN_VALUE" --command extension build \
+    --source-dir "$REPO_ROOT" \
+    --output-filepath "$ZIP_PATH"
+else
+  echo "Blender binary not found. Falling back to Python zip packager." >&2
+
+  mapfile -t repo_files < <(git -C "$REPO_ROOT" ls-files -co --exclude-standard)
+
+  include_files=()
+  for rel_path in "${repo_files[@]}"; do
+    case "$rel_path" in
+      .*|*/.*)
+        continue
+        ;;
+      .github/*|scripts/*|dist/*|*.zip)
+        continue
+        ;;
+      */__pycache__/*|__pycache__/*|*.pyc)
+        continue
+        ;;
+    esac
+
+    abs_path="$REPO_ROOT/$rel_path"
+    if [[ -f "$abs_path" ]]; then
+      include_files+=("$rel_path")
+    fi
+  done
+
+  if [[ ${#include_files[@]} -eq 0 ]]; then
+    echo "No files selected for packaging." >&2
+    exit 1
+  fi
+
+  python3 - "$REPO_ROOT" "$ZIP_PATH" "${include_files[@]}" <<'PY'
 import pathlib
 import sys
 import zipfile
@@ -75,6 +107,7 @@ with zipfile.ZipFile(zip_path, mode="w", compression=zipfile.ZIP_DEFLATED) as zf
         if src.is_file():
             zf.write(src, arcname=rel)
 PY
+fi
 
 sha256sum "$ZIP_PATH" > "$ZIP_PATH.sha256"
 

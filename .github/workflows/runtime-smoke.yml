@@ -22,12 +22,18 @@ jobs:
           path: ~/.cache/soleshapper
           key: blender-${{ runner.os }}-4.2.9
 
-      - name: Validate smoke scripts
+      - name: Validate metadata and smoke scripts
         run: |
-          python3 -m py_compile scripts/runtime_smoke.py
+          python3 scripts/check_version_consistency.py
+          python3 -m py_compile scripts/check_version_consistency.py scripts/runtime_smoke.py
           bash -n scripts/run_runtime_smoke.sh
 
       - name: Run runtime smoke test
         env:
           BLENDER_VERSION: "4.2.9"
         run: bash scripts/run_runtime_smoke.sh
+
+      - name: Validate extension metadata with Blender CLI
+        run: |
+          ~/.cache/soleshapper/blender-4.2.9-linux-x64/blender \
+            --command extension validate .
