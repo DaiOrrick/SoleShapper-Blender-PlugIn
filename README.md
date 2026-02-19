@@ -58,6 +58,9 @@ Options:
 The test exercises add-on registration, default mesh load, noise/scale operators,
 preset save/load/delete, OBJ export/import, and STL export.
 
+GitHub CI runs the same smoke test on pull requests and pushes to `main` via
+`.github/workflows/runtime-smoke.yml`.
+
 ## License
 
 This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
